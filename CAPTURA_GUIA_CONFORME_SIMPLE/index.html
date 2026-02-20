@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escaner Logística Móvil</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+        body { font-family: sans-serif; background-color: #222; color: white; text-align: center; margin: 0; padding: 10px; }
+        h1 { margin: 10px 0; font-size: 1.2rem; }
+        #contenedor-camara { position: relative; width: 100%; max-width: 600px; margin: 0 auto; overflow: hidden; border-radius: 10px; border: 2px solid #555; }
+        canvas { width: 100%; display: block; }
+        
+        #panel-control { 
+            background: #333; padding: 15px; border-radius: 15px 15px 0 0; 
+            position: fixed; bottom: 0; left: 0; width: 100%; box-sizing: border-box;
+        }
+        
+        input { font-size: 1.5rem; width: 80%; padding: 10px; text-align: center; border-radius: 5px; border: none; margin-bottom: 10px;}
+        
+        button {
+            background-color: #007bff; color: white; border: none;
+            padding: 15px 30px; font-size: 1.2rem; font-weight: bold;
+            border-radius: 50px; width: 100%; max-width: 300px;
+            cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        button:active { transform: scale(0.98); }
+        .flash { animation: flash-animation 0.2s; }
+        @keyframes flash-animation { 0% { opacity: 1; } 50% { opacity: 0; background: white; } 100% { opacity: 1; } }
+
+        #estado { font-size: 0.9rem; color: #aaa; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>📸 Escáner Logística</h1>
+
+    <div id="contenedor-camara">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div id="panel-control">
+        <div id="estado">Buscando QR...</div>
+        <input type="text" id="input-guia" placeholder="Nº GUÍA">
+        <br>
+        <button id="btn-guardar" onclick="guardarFoto()">💾 GUARDAR FOTO</button>
+    </div>
+
+    <script>
+        const video = document.createElement("video");
+        const canvasElement = document.getElementById("canvas");
+        const canvas = canvasElement.getContext("2d", { willReadFrequently: true });
+        const inputGuia = document.getElementById("input-guia");
+        const estado = document.getElementById("estado");
+        let ultimoQR = "";
+
+        // Iniciar Cámara Trasera
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+            video.srcObject = stream;
+            video.setAttribute("playsinline", true);
+            video.play();
+            requestAnimationFrame(tick);
+        });
+
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvasElement.height = video.videoHeight;
+                canvasElement.width = video.videoWidth;
+                
+                // Dibujar video en el canvas (lo que ves en pantalla)
+                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                
+                // Buscar QR
+                var imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+                var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+
+                if (code) {
+                    // Dibujar recuadro VERDE (Solo visual, no se guardará)
+                    canvas.beginPath();
+                    canvas.lineWidth = 5;
+                    canvas.strokeStyle = "#00FF00";
+                    canvas.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+                    canvas.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
+                    canvas.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
+                    canvas.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
+                    canvas.lineTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+                    canvas.stroke();
+
+                    // Si lee un QR nuevo
+                    if (code.data !== ultimoQR) {
+                        ultimoQR = code.data;
+                        inputGuia.value = ultimoQR;
+                        estado.innerText = "✅ QR Detectado";
+                        estado.style.color = "#00FF00";
+                        if (navigator.vibrate) navigator.vibrate(200);
+                    }
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        function guardarFoto() {
+            const nombre = inputGuia.value.trim();
+            if (!nombre) { alert("¡Falta el número de guía!"); return; }
+
+            // Efecto Flash
+            document.body.classList.add("flash");
+            setTimeout(() => document.body.classList.remove("flash"), 200);
+
+            // --- CORRECCIÓN AQUÍ: Guardar LIMPIO ---
+            // Creamos un canvas temporal invisible
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const tempCtx = tempCanvas.getContext("2d");
+            
+            // Dibujamos SOLO el video (sin el recuadro verde que dibujamos en el otro canvas)
+            tempCtx.drawImage(video, 0, 0);
+
+            // Descargar esa imagen limpia
+            const link = document.createElement('a');
+            link.download = nombre + '.jpg';
+            link.href = tempCanvas.toDataURL("image/jpeg", 0.95); // Calidad alta
+            link.click();
+            
+            // Limpiar para el siguiente
+            inputGuia.value = "";
+            ultimoQR = "";
+            estado.innerText = "Listo para el siguiente...";
+            estado.style.color = "#aaa";
+        }
+    </script>
+</body>
+</html>
